@@ -8,29 +8,47 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddRateLimiter(_ => _
-    .AddPolicy("twoPerMinuteRateLimiter", context =>
+    .AddPolicy("X-Forwarded-For-TwoPerMinuteRateLimiter", context =>
+    {
+        string key = string.Empty;
+        // NOTE: X-Forwarded-For is often used to get the IP address when behind proxies etc
+        // Make sure the client can't fake these headers and they're only set by the proxy
+        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var headerValues))
         {
-            string key = string.Empty;
-            // NOTE: X-Forwarded-For is often used to get the IP address when behind proxies etc
-            // Make sure the client can't fake these headers and they're only set by the proxy
-            if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var headerValues))
-            {
-                key = headerValues.FirstOrDefault();
-            }
-            else
-            {
-                //If you are using some sort of proxy then this may just contain the address of the proxy every time. Not what you want.
-                key = context.Connection.RemoteIpAddress.ToString();
-            }
+            key = headerValues.FirstOrDefault();
+        }
 
-            return RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: key,
-                factory: partition => new FixedWindowRateLimiterOptions
-                {
-                    Window = TimeSpan.FromMinutes(1),
-                    PermitLimit = 2
-                });
-        })
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: key,
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 2
+            });
+    })
+    .OnRejected = (ctx, token) =>
+    {
+        ctx.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        ctx.HttpContext.Response.WriteAsync("Woah, these calls are expensive you know! No more than 2 in a minute please!");
+        return ValueTask.CompletedTask;
+    });
+
+builder.Services.AddRateLimiter(_ => _
+    .AddPolicy("IP-TwoPerMinuteRateLimiter", context =>
+    {
+        string key = string.Empty;
+        // NOTE: If using a proxy then the IP address might always hold the address of the proxy
+        // That's why the X-Forwarded-For header is often used 
+        key = context.Connection.RemoteIpAddress.ToString();
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: key,
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 2
+            });
+    })
     .OnRejected = (ctx, token) =>
     {
         ctx.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
@@ -61,6 +79,6 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
-    //.RequireRateLimiting("twoPerMinuteRateLimiter");
+    //.RequireRateLimiting("X-Forwarded-For-TwoPerMinuteRateLimiter");
 
 app.Run();

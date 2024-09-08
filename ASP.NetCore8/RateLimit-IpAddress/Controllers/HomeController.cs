@@ -5,7 +5,7 @@ using System.Diagnostics;
 
 namespace RateLimiting.Controllers
 {
-    //[EnableRateLimiting("twoPerMinuteRateLimiter")]
+    //[EnableRateLimiting("X-Forwarded-For-TwoPerMinuteRateLimiter")]
     public class HomeController : Controller
     {
         private readonly ILogger<HomeController> _logger;
@@ -20,7 +20,7 @@ namespace RateLimiting.Controllers
             return View();
         }
 
-        [EnableRateLimiting("twoPerMinuteRateLimiter")]
+        [EnableRateLimiting("IP-TwoPerMinuteRateLimiter")]
         public IActionResult Privacy()
         {
             return View();
